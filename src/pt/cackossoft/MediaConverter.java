@@ -22,11 +22,8 @@ public class MediaConverter {
                                          , "Rename: Add prefix Timestamp + Camera Model"
                                          , "Rename: Remove Regex & Add prefix Timestamp + Camera Model"
                                          , "Rename: Replace Regex by User fixed text"
-                                         , "Canon Ixus 70"
-                                         , "Nikon D3200"
                                          , "Samsung Galaxy S2/S3/Tab"
-                                         , "Samsung Galaxy Ace"
-                                         , "HTC Wildfire" };
+                                         , "Samsung Galaxy Ace" };
 
     // private final String[] fMovieExtensions = { ".avi", ".mpg", ".mov" };
     private final String[] fPhotoExtensions = { ".jpg", ".png", ".gif" };
@@ -51,11 +48,8 @@ public class MediaConverter {
             case 1: return getNewFilePath_AddPrefixTimestampCamera(f);
             case 2: return getNewFilePath_RemoveRegexAddPrefixTimestampCamera(f);
             case 3: return getNewFilePath_ReplaceRegexByUserText(f);
-            case 4: return getNewFilePath_AddPrefixTimestampCamera(f);
-            case 5: return getNewFilePath_AddPrefixTimestampCamera(f);
-            case 6: return getNewFilePath_samsung(f);
-            case 7: return getNewFilePath_AddPrefixTimestampCamera(f);
-            case 8: return getNewFilePath_AddPrefixTimestampCamera(f);
+            case 4: return getNewFilePath_samsung(f);
+            case 5: return getNewFilePath_samsung(f);
         }
         return "";
     }
@@ -259,7 +253,7 @@ public class MediaConverter {
             movieCameraModel = lCameraModel;             // If it is different, ask the user which will be the "User" Camera Model
             int lConfirmResponse;
             do {
-                movieCameraModelUser = JOptionPane.showInputDialog("Camera Model for this file (and similar):", lCameraModel).trim().toLowerCase().replaceAll("[^\\w]", "_");
+                movieCameraModelUser = JOptionPane.showInputDialog("Camera Model for file " + f.getName() + " (and similar):", lCameraModel).trim().toLowerCase().replaceAll("[^\\w]", "_");
                 // Confirm
                 lConfirmResponse = JOptionPane.showConfirmDialog(null, "Camera Model information for file " + f.getName() +
                         " and similar will be \n\t\t\"" + movieCameraModelUser + "\"\nConfirm?", "Input Confirmation", JOptionPane.YES_NO_CANCEL_OPTION);
@@ -344,7 +338,7 @@ public class MediaConverter {
             exifCameraModel = lCameraModel;             // If it is different, ask the user which will be the "User" Camera Model
             int lConfirmResponse;
             do {
-                exifCameraModelUser = JOptionPane.showInputDialog("Camera Model for this file (and similar):", lCameraModel).trim().toLowerCase().replaceAll("[^\\w]", "_");
+                exifCameraModelUser = JOptionPane.showInputDialog("Camera Model for file " + f.getName() + " (and similar):", lCameraModel).trim().toLowerCase().replaceAll("[^\\w]", "_");
                 // Confirm
                 lConfirmResponse = JOptionPane.showConfirmDialog(null, "Camera Model information for file " + f.getName() +
                         " and similar will be \n\t\t\"" + exifCameraModelUser + "\"\nConfirm?", "Input Confirmation", JOptionPane.YES_NO_CANCEL_OPTION);
@@ -398,6 +392,9 @@ public class MediaConverter {
      */
     private boolean isFileAlreadyHandled(File f) {
         // Avoid processing already processed files: Accept all names that do not start by "my" timestamp
+//        if (f.getName().toLowerCase().endsWith(".thm")) {
+//            return true;
+//        }
         return f.getName().matches("^(19|20)\\d\\d(0[1-9]|1[012])(0[1-9]|[12][0-9]|3[01])_([01][0-9]|2[0-3])[0-5][0-9][0-5][0-9]-.*");
     }
 
@@ -420,8 +417,13 @@ public class MediaConverter {
      */
     private String getNewFilePath_samsung(File f) {
         if (isFileAlreadyHandled(f)) return "";
-        String lTimestamp = f.getName().substring(0, 15);   // It is better to use the timestamp on the filename than to get it from Exif
-        String lNewFilePath = lTimestamp + getFileCameraModel(f) + getFileExtension(f);
+        // If the file has any prefix, store it
+        String lPrefix = "-" + f.getName().split("_")[0];
+        if (lPrefix.matches("^-(19|20)\\d\\d(0[1-9]|1[012])(0[1-9]|[12][0-9]|3[01])")) {
+            lPrefix = "";
+        }
+        String lTimestamp = f.getName().substring(lPrefix.length(), lPrefix.length() + 15);   // It is better to use the timestamp on the filename than to get it from Exif
+        String lNewFilePath = lTimestamp + "-" + getFileCameraModel(f) + lPrefix.toLowerCase() + getFileExtension(f);
 
         // Add folder (in this case it is the same)
         lNewFilePath = f.getParent() + File.separator + lNewFilePath;
@@ -443,77 +445,6 @@ public class MediaConverter {
         }
         String lTimestamp = lFilename.substring(0, 4) + lFilename.substring(5, 7) + lFilename.substring(8, 10) + "_" + lFilename.substring(11, 13) + lFilename.substring(14, 16) + lFilename.substring(17, 19);
         String lNewFilePath = lTimestamp + lStaticInfo + f.getName().substring(f.getName().length()-4).toLowerCase();
-
-        // Add folder (in this case it is the same)
-        lNewFilePath = f.getParent() + File.separator + lNewFilePath;
-        return lNewFilePath;
-    }
-
-    /**
-     * Gets the new Filename path for media taken on: Canon IXUS 70 (book 101)
-     * @param f the file that is being analysed
-     * @return "" if the file does not need renaming; the new name otherwise.
-     *
-    private String getNewFilePath_canonixus70(File f) {
-        // Avoid processing already processed files: Format of the filenames: "IMG_" or "MVI_" + dddd .jpg or .avi
-        if (!f.getName().substring(0, 4).equals("IMG_") && !f.getName().substring(0, 4).equals("MVI_"))  { return ""; }
-        String lStaticInfo = "-canon_ixus70-101";
-        String lNewFilePath = getFileTimestamp(f) + lStaticInfo + "-" + f.getName().toLowerCase();
-
-        // Add folder (in this case it is the same)
-        lNewFilePath = f.getParent() + File.separator + lNewFilePath;
-        return lNewFilePath;
-    }
-
-    /**
-     * Gets the new Filename path for media taken on: Nikon D3200 (book 100)
-     * @param f the file that is being analysed
-     * @return "" if the file does not need renaming; the new name otherwise.
-     *
-    private String getNewFilePath_nikon3200(File f) {
-        // Avoid processing already processed files: Format of the filenames: "DSC_" + dddd .jpg or .mov
-        if (!f.getName().substring(0, 4).equals("DSC_"))  { return ""; }
-        String lStaticInfo = "-nikon_d3200-100";
-        String lNewFilePath;
-        String lNumber = f.getName().substring(4, 8);       // Because we need to increase the photo nr by 261
-//        int lNewNumber = Integer.parseInt(lNumber);       // This is used if there is any offset needed in the photo number.
-//        lNumber = String.format("%0,4d", lNewNumber + 261);
-        lNewFilePath = getFileTimestamp(f) + lStaticInfo + "-" + "dsc_" + lNumber + f.getName().substring(8).toLowerCase();//f.getName().toLowerCase();
-
-        // Add folder (in this case it is the same)
-        lNewFilePath = f.getParent() + File.separator + lNewFilePath;
-        return lNewFilePath;
-    }
-
-    /**
-     * Gets the new Filename path for media taken on: HTC Wildfire (before 2012)
-     * @param f the file that is being analysed
-     * @return "" if the file does not need renaming; the new name otherwise.
-     *
-    private String getNewFilePath_htcWildfire(File f) {
-        String lStaticInfo = f.getName().substring(0, 5);
-        // Avoid processing already processed files: Format of the filenames: "IMAG0" or "VIDEO" + dddd .jpg or .mov
-        if (!(lStaticInfo.equals("IMAG0") || lStaticInfo.equals("VIDEO")))  { return ""; }
-        lStaticInfo = "-htc";
-        String lNewFilePath;
-        lNewFilePath = getFileTimestamp(f) + lStaticInfo + "-" + f.getName().toLowerCase();//f.getName().toLowerCase();
-
-        // Add folder (in this case it is the same)
-        lNewFilePath = f.getParent() + File.separator + lNewFilePath;
-        return lNewFilePath;
-    }
-
-    /**
-     * Gets the new Filename path for media taken on: HTC Wildfire (after 2012)
-     * @param f the file that is being analysed
-     * @return "" if the file does not need renaming; the new name otherwise.
-     *
-    private String getNewFilePath_htcWildfire2(File f) {
-        String lStaticInfo = f.getName().substring(0, 4);
-        // Avoid processing already processed files: Format of the filenames: "IMG_" or "VID_" + dddd .jpg or .mov
-        if (!(lStaticInfo.equals("IMG_") || lStaticInfo.equals("VID_")))  { return ""; }
-        lStaticInfo = "-htc";
-        String lNewFilePath = f.getName().substring(4, 19) + lStaticInfo + f.getName().substring(19).toLowerCase();
 
         // Add folder (in this case it is the same)
         lNewFilePath = f.getParent() + File.separator + lNewFilePath;
