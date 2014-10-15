@@ -6,7 +6,7 @@ import com.drew.metadata.Metadata;
 import com.drew.metadata.exif.ExifIFD0Directory;
 import com.drew.metadata.exif.ExifSubIFDDirectory;
 import org.apache.commons.lang.ArrayUtils;
-
+import org.apache.commons.lang.time.DateUtils;
 import javax.swing.*;
 import java.io.*;
 import java.text.ParseException;
@@ -22,6 +22,7 @@ public class MediaConverter {
                                          , "Rename: Add prefix Timestamp + Camera Model"
                                          , "Rename: Remove Regex & Add prefix Timestamp + Camera Model"
                                          , "Rename: Replace Regex by User fixed text"
+                                         , "Rename: Update File Time adding minutes"
                                          , "Samsung Galaxy S2/S3/Tab"
                                          , "Samsung Galaxy Ace" };
 
@@ -33,7 +34,8 @@ public class MediaConverter {
     private String movieCameraModel;        // Original Camera model name for movies (must be reset every time a new folder is selected).
     private String movieCameraModelUser;    // User-defined Camera model name for movies
     private String replaceRegex;            // Regex to be replaced by new text or by Timestamp_CameraModel
-    private String replacementUserText;         // New text to replace the Regex for
+    private String replacementUserText;     // New text to replace the Regex for
+    private int minutesToBeAdded;           // Number of minutes to add the file timestamp
 
     /**
      * Returns the proposed file new name, according to the selected converter.
@@ -48,8 +50,9 @@ public class MediaConverter {
             case 1: return getNewFilePath_AddPrefixTimestampCamera(f);
             case 2: return getNewFilePath_RemoveRegexAddPrefixTimestampCamera(f);
             case 3: return getNewFilePath_ReplaceRegexByUserText(f);
-            case 4: return getNewFilePath_samsung(f);
+            case 4: return getNewFilePath_UpdatePrefixTimeAddMinutes(f);
             case 5: return getNewFilePath_samsung(f);
+            case 6: return getNewFilePath_samsung(f);
         }
         return "";
     }
@@ -91,10 +94,21 @@ public class MediaConverter {
                 }
             }
 
+            // Get the number of minutes to add, if option was selected
+            String lMinutesToBeAdded = null;
+            if (fConverters[4].equals(lConverter)) {
+                lMinutesToBeAdded = JOptionPane.showInputDialog(null, "Specify the number of minutes to be added to each file timestamp:", "Media Converter", JOptionPane.QUESTION_MESSAGE);
+                if (null == lMinutesToBeAdded) {
+                    continue;
+                }
+                minutesToBeAdded = Integer.parseInt(lMinutesToBeAdded);
+            }
+
             // Confirm Actions
             if (JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(null, "Please Confirm the parameters:\n\nSelected folder: " + lSrcFolderPath
                     + "\nSelected Action: " + lConverter + (null == replaceRegex ? "" : "\nRegex Text to be replaced: \"" + replaceRegex + "\"")
-                    + (null == replacementUserText ? "" : "\nText to replace the above regex: \"" + replacementUserText + "\""),
+                    + (null == replacementUserText ? "" : "\nText to replace the above regex: \"" + replacementUserText + "\"")
+                    + (null == lMinutesToBeAdded ? "" : "\nMinutes to be added to each timestamp: " + minutesToBeAdded),
                     "Input Confirmation", JOptionPane.OK_CANCEL_OPTION)) {
                 JOptionPane.showMessageDialog(null, "Conversion Cancelled.", "Media Classifier", JOptionPane.INFORMATION_MESSAGE);
                 continue;
@@ -373,6 +387,10 @@ public class MediaConverter {
             // Get Filestamp from File Last Modified
             lTimeStamp = new Date(f.lastModified());
         }
+
+            // @Temporary Fix: If there is need to change the timestamp (due to change of timezone or camera time not correct), change here with an offset
+            // lTimeStamp = DateUtils.addMinutes(lTimeStamp, -67);
+
         return new SimpleDateFormat("yyyyMMdd_HHmmss").format(lTimeStamp);
     }
 
@@ -391,10 +409,12 @@ public class MediaConverter {
      * @return true if file needs to be processed
      */
     private boolean isFileAlreadyHandled(File f) {
+            // @Temporary Fix: To avoid multiple interactions with the user when there are multiple files like "*.thm", use this, and then run again removing the comments
+            //   if (f.getName().toLowerCase().endsWith(".thm")) {
+            //      return true;
+            //   }
+
         // Avoid processing already processed files: Accept all names that do not start by "my" timestamp
-//        if (f.getName().toLowerCase().endsWith(".thm")) {
-//            return true;
-//        }
         return f.getName().matches("^(19|20)\\d\\d(0[1-9]|1[012])(0[1-9]|[12][0-9]|3[01])_([01][0-9]|2[0-3])[0-5][0-9][0-5][0-9]-.*");
     }
 
@@ -495,11 +515,18 @@ public class MediaConverter {
      * Gets the new Filename path for media, removing the input Regex and prefixing it with Timestamp and Camera Model
      * @param f the file that is being analysed
      * @return "" if the file does not need renaming; the new name otherwise.
+     * Example: To change the photo time, call this with Regex: "^(19|20)\d\d(0[1-9]|1[012])(0[1-9]|[12][0-9]|3[01])_([01][0-9]|2[0-3])[0-5][0-9][0-5][0-9]-canon_ixus70_101-"
      */
     private String getNewFilePath_RemoveRegexAddPrefixTimestampCamera(File f) {
+            // @Temporary Fix: To avoid multiple interactions with the user when there are multiple files like "*.thm", use this, and then run again removing the comments
+            //   if (f.getName().toLowerCase().endsWith(".thm")) {
+            //      return "";
+            //   }
+
+        String lOldFilename = f.getName().toLowerCase().replaceAll(replaceRegex, "");
+        if (f.getName().toLowerCase().equals(lOldFilename)) return "";    // If Regex not found, do not rename file
         String lNewFilePath = getFilePrefix_TimestampCamera(f);
         if (lNewFilePath.isEmpty()) return "";
-        String lOldFilename = f.getName().toLowerCase().replaceAll(replaceRegex, "");
         lNewFilePath += (lOldFilename.startsWith(".") || lOldFilename.startsWith("-") || lOldFilename.startsWith("_") ? "" : "-") + lOldFilename.replaceAll("[^\\w.]", "_");
 
         // Add folder (in this case it is the same)
@@ -514,6 +541,28 @@ public class MediaConverter {
      */
     private String getNewFilePath_ReplaceRegexByUserText(File f) {
         String lNewFilePath = f.getName().toLowerCase().replaceAll(replaceRegex, replacementUserText).replaceAll("[^\\w._-]", "_");
+        if (f.getName().toLowerCase().equals(lNewFilePath)) return "";    // If Regex not found, do not rename file
+
+        // Add folder (in this case it is the same)
+        lNewFilePath = f.getParent() + File.separator + lNewFilePath;
+        return lNewFilePath;
+    }
+
+    /**
+     * Gets the new Filename path for media, updating the existing file timestamp by adding minutes to that timestamp
+     * @param f the file that is being analysed
+     * @return "" if the file does not need renaming; the new name otherwise.
+     */
+    private String getNewFilePath_UpdatePrefixTimeAddMinutes(File f) {
+        String lFilenameTimeStamp = f.getName().substring(0, 15);
+        Date lFilenameTimestamp;
+        try {
+            lFilenameTimestamp = new SimpleDateFormat("yyyyMMdd_HHmmss").parse(lFilenameTimeStamp);
+        } catch (ParseException e) {
+            return "";
+        }
+        lFilenameTimestamp = DateUtils.addMinutes(lFilenameTimestamp, minutesToBeAdded);
+        String lNewFilePath = new SimpleDateFormat("yyyyMMdd_HHmmss").format(lFilenameTimestamp) + f.getName().toLowerCase().substring(15).replaceAll("[^\\w._-]", "_");
 
         // Add folder (in this case it is the same)
         lNewFilePath = f.getParent() + File.separator + lNewFilePath;
