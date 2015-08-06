@@ -23,8 +23,7 @@ public class MediaConverter {
                                          , "Rename: Remove Regex & Add prefix Timestamp + Camera Model"
                                          , "Rename: Replace Regex by User fixed text"
                                          , "Rename: Update File Time adding minutes"
-                                         , "Samsung Galaxy S2/S3/Tab"
-                                         , "Samsung Galaxy Ace" };
+                                         , "Wiko/Samsung Galaxy S2/S3/Tab/Ace" };
 
     // private final String[] fMovieExtensions = { ".avi", ".mpg", ".mov" };
     private final String[] fPhotoExtensions = { ".jpg", ".png", ".gif" };
@@ -36,6 +35,27 @@ public class MediaConverter {
     private String replaceRegex;            // Regex to be replaced by new text or by Timestamp_CameraModel
     private String replacementUserText;     // New text to replace the Regex for
     private int minutesToBeAdded;           // Number of minutes to add the file timestamp
+
+    /**
+     * Renames a file
+     * @param aFile original file
+     * @param aNewName new name of the file
+     * @return success
+     */
+    private Boolean renameFile(File aFile, String aNewName) {
+        String lNewName = aNewName;
+        for (int lNum = 0;; ++lNum) {
+            if (lNum > 0) {
+                // This is to cover different versions of the same file, if the file already exists (appends a number)
+                int lIndexExtension = aNewName.lastIndexOf(".");
+                lNewName = aNewName.substring(0, lIndexExtension) + "-" + lNum + aNewName.substring(lIndexExtension);
+            }
+            if (!new File(lNewName).exists()) {
+                break;
+            }
+        }
+        return aFile.renameTo(new File(lNewName));
+    }
 
     /**
      * Returns the proposed file new name, according to the selected converter.
@@ -52,7 +72,6 @@ public class MediaConverter {
             case 3: return getNewFilePath_ReplaceRegexByUserText(f);
             case 4: return getNewFilePath_UpdatePrefixTimeAddMinutes(f);
             case 5: return getNewFilePath_samsung(f);
-            case 6: return getNewFilePath_samsung(f);
         }
         return "";
     }
@@ -147,27 +166,6 @@ public class MediaConverter {
         lFileDialog.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         lFileDialog.setAcceptAllFileFilterUsed(false);
         return lFileDialog.showOpenDialog(null) == JFileChooser.APPROVE_OPTION ? lFileDialog.getSelectedFile().getAbsolutePath() : "";
-    }
-
-    /**
-     * Renames a file
-     * @param aFile original file
-     * @param aNewName new name of the file
-     * @return success
-     */
-    private Boolean renameFile(File aFile, String aNewName) {
-        String lNewName = aNewName;
-        for (int lNum = 0;; ++lNum) {
-            if (lNum > 0) {
-                // This is to cover different versions of the same file, if the file already exists (appends a number)
-                int lIndexExtension = aNewName.lastIndexOf(File.separator);
-                lNewName = aNewName.substring(0, lIndexExtension) + "-" + lNum + aNewName.substring(lIndexExtension);
-            }
-            if (!new File(lNewName).exists()) {
-                break;
-            }
-        }
-        return aFile.renameTo(new File(lNewName));
     }
 
     /**
@@ -346,7 +344,7 @@ public class MediaConverter {
         } else if ("NIKON CORPORATION NIKON D3200".equals(lCameraModel)) {
             lCameraModel = "nikon_d3200_100";
         }
-        
+
         // Get User confirmation
         if (!exifCameraModel.equals(lCameraModel)) {    // Compare the current Camera Model with the previous file's (default is @@No Camera Model@@)
             exifCameraModel = lCameraModel;             // If it is different, ask the user which will be the "User" Camera Model
@@ -504,7 +502,25 @@ public class MediaConverter {
         if (isFileAlreadyHandled(f)) return ""; // This check is to avoid reprocessing files already handled
         String lNewFilePath = getFilePrefix_TimestampCamera(f);
         if (lNewFilePath.isEmpty()) return "";
-        lNewFilePath += "-" + f.getName().toLowerCase().replaceAll("[^\\w.]", "_");
+        String lOldName = f.getName().toLowerCase().replaceAll("[^\\w.]", "_");
+
+        /*  // @TODO Uncomment this code to change the photo numbering
+            int lIdxNumberStt = lOldName.indexOf("_") + 1;  // File names are typically "text_123[_1].extension"
+            if (lIdxNumberStt > 0) {                        // Search for the first occurrence of "_" in the name
+                int lIdxNumberEnd = lOldName.indexOf("_", lIdxNumberStt);   // Now search for any next occurrence of "_"
+                if (lIdxNumberEnd < 0) {                    // Maybe this file has no more "_"s
+                    lIdxNumberEnd = lOldName.indexOf(".", lIdxNumberStt);   // But it must then have a ".extension"
+                }
+                if (lIdxNumberEnd > 0) {
+                    String lOldNumber = lOldName.substring(lIdxNumberStt, lIdxNumberEnd);
+                    int lNewNumber = Integer.parseInt(lOldNumber);
+                    lNewNumber += 1029;     // @IMPORTANT this is the Offset that needs to be added to the photo number
+                    lOldName = lOldName.substring(0, lIdxNumberStt) + lNewNumber + lOldName.substring(lIdxNumberEnd);
+                }
+            }
+        */
+
+        lNewFilePath += "-" + lOldName;
 
         // Add folder (in this case it is the same)
         lNewFilePath = f.getParent() + File.separator + lNewFilePath;
