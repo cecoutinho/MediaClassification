@@ -25,16 +25,19 @@ public class MediaConverter {
                                          , "Rename: Update File Time adding minutes"
                                          , "Wiko/Samsung Galaxy S2/S3/Tab/Ace" };
 
-    // private final String[] fMovieExtensions = { ".avi", ".mpg", ".mov" };
+    private final String[] fMovieExtensions = { ".avi", ".mpg", ".mov", ".3gp" };
     private final String[] fPhotoExtensions = { ".jpg", ".png", ".gif" };
     private Metadata exifMetadata;          // Exif Metadata for the current photo (must be cleared every time the photo changes).
     private String exifCameraModel;         // Original Camera model name for photos (must be reset every time a new folder is selected).
     private String exifCameraModelUser;     // User-defined Camera model name for photos
+    private BufferedReader mediaMetadata;         // Media Metadata for the current file (must be cleared every time the file changes).
     private String movieCameraModel;        // Original Camera model name for movies (must be reset every time a new folder is selected).
     private String movieCameraModelUser;    // User-defined Camera model name for movies
     private String replaceRegex;            // Regex to be replaced by new text or by Timestamp_CameraModel
     private String replacementUserText;     // New text to replace the Regex for
     private int minutesToBeAdded;           // Number of minutes to add the file timestamp
+    private final String[] fKnownCameraModelIDs = { "Canon Canon DIGITAL IXUS 70", "CanonMVI06", "NIKON CORPORATION NIKON D3200", "WIKO                            HIGHWAY                        " };
+    private final String[] fKnownCameraModelNames = { "canon_ixus70_101", "canon_ixus70_101", "nikon_d3200_100", "wiko_highway" };
 
     /**
      * Renames a file
@@ -74,6 +77,20 @@ public class MediaConverter {
             case 5: return getNewFilePath_samsung(f);
         }
         return "";
+    }
+
+    /**
+     * If a Camera Model ID matches any of the known IDs, return the corresponding Camera Known Name.
+     * @param aCameraModel the ID returned by EXIF or other tool
+     * @return the name that you wish this camera to be called (from fKnownCameraModelNames)
+     */
+    private String getKnownCameraModel(String aCameraModel) {
+        for (int i = fKnownCameraModelIDs.length; i-- > 0;) {
+            if (fKnownCameraModelIDs[i].equals(aCameraModel)) {
+                return fKnownCameraModelNames[i];
+            }
+        }
+        return aCameraModel;
     }
 
     /**
@@ -143,6 +160,7 @@ public class MediaConverter {
 
                         // Process file
                         exifMetadata = null;
+                        mediaMetadata = null;
                         String lNewName = getNewFilePath(f, lConverter);
                         // Only renames if the new name is valid
                         if (!lNewName.isEmpty()) {
@@ -169,48 +187,61 @@ public class MediaConverter {
     }
 
     /**
-     * Movie metadata reading methods.
+     * Media metadata reading methods.
      */
 
     /**
-     * Returns the specified metadata of the movie
+     * Populates the mediaMetadata property with data for the MEDIA analysis.
      * @param f the file that is being analysed
-     * @return the specified file metadata if it exists, or "" in case of error or not found
+     * @param aKey the key for which we want to get the value
+     * @return Value for the passed key, if any. Otherwise, null
      */
-    private String getMovieMetadata(File f, String aKey) {
-        // Invoke external program "mediainfo"
-        ProcessBuilder pb = new ProcessBuilder("mediainfo", f.getAbsolutePath());
-        Process p = null;
-        try {
-            p = pb.start(); // Execute the program
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-        if (p != null) {
+    private String getMediaMetadataValue(File f, String aKey) {
+        if (null == mediaMetadata) {
+            // Invoke external program "mediainfo"
+            ProcessBuilder pb = new ProcessBuilder("mediainfo", "-f", f.getAbsolutePath());
+            Process p = null;
             try {
-                p.waitFor(); // Wait for the end of the program
-            } catch (InterruptedException e) {
+                p = pb.start(); // Execute the program
+            } catch (IOException e) {
                 e.printStackTrace();
             }
-        }
-        if (p != null) {
-            // Read the program's stdout (here it is the input stream)
-            BufferedReader bri = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String input = null;
-            do {
+            if (p != null) {
                 try {
-                    input = bri.readLine();
+                    p.waitFor(); // Wait for the end of the program
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                // Read the program's stdout (here it is the input stream)
+                mediaMetadata = new BufferedReader(new InputStreamReader(p.getInputStream()));
+                try {
+                    mediaMetadata.mark(4096);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                // Stop at the required key
-                if (input != null && input.startsWith(aKey)) {
-                   break;
-                }
-            } while (input != null);
-            return null == input ? "" : input.split(": ")[1].trim();
+            }
         }
-        return "";
+
+        String lStrKeyValue = null;
+        try {
+            mediaMetadata.reset();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+
+        do {
+            try {
+                lStrKeyValue = mediaMetadata.readLine();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            // Stop at the required key
+            if (lStrKeyValue != null && lStrKeyValue.startsWith(aKey)) {
+               break;
+            }
+        } while (lStrKeyValue != null);
+        return null == lStrKeyValue ? null : lStrKeyValue.split(": ")[1].trim();
     }
 
     /**
@@ -218,12 +249,12 @@ public class MediaConverter {
      * @param f the file that is being analysed
      * @return the proposed file timestamp or null in case of error
      */
-    private Date getMovieTimeStamp(File f) {
+    private Date getMediaTimeStamp(File f) {
         // Cycle through all possible keys, break if any of them work
         String lTimestamp = null;
         final String[] possibleKeys = { "Mastered date", "Encoded date" };
         for (String lKey : possibleKeys) {
-            if (!(lTimestamp = getMovieMetadata(f, lKey)).isEmpty()) {
+            if (null != (lTimestamp = getMediaMetadataValue(f, lKey))) {
                 break;
             }
         }
@@ -241,42 +272,49 @@ public class MediaConverter {
     }
 
     /**
+     * Asks the user to confirm the camera Model that was selected
+     * @param aFileName Name of the media file
+     * @param aCameraModel Name of the extracted Camera Model
+     * @return the name that the user wants to give to that Camera Model
+     */
+    private String getUserConfirmationCameraModel(String aFileName, String aCameraModel) {
+        int lConfirmResponse;
+        String lCameraModelUser;
+        do {
+            lCameraModelUser = JOptionPane.showInputDialog("Camera Model for file " + aFileName + " (and similar):", aCameraModel.trim()).trim().toLowerCase().replaceAll("[^\\w]", "_");
+            // Ask user Confirmation
+            lConfirmResponse = JOptionPane.showConfirmDialog(null, "Camera Model information for file " + aFileName +
+                    " and similar will be \n\t\t\"" + lCameraModelUser + "\"\nConfirm?", "Input Confirmation", JOptionPane.YES_NO_CANCEL_OPTION);
+            if (JOptionPane.CANCEL_OPTION == lConfirmResponse) {
+                JOptionPane.showMessageDialog(null, "Conversion Cancelled.", "Media Classifier", JOptionPane.INFORMATION_MESSAGE);
+                System.exit(0);
+            }
+        } while (JOptionPane.YES_OPTION != lConfirmResponse);
+        return lCameraModelUser;
+    }
+
+    /**
      * Returns the camera model of the movie
      * @param f the file that is being analysed
      * @return the file camera model name
      */
-    private String getMovieCameraModel(File f) {
+    private String getMediaCameraModel(File f) {
         // Cycle through all possible keys, break if any of them work
         String lCameraModel = null;
         final String[] possibleKeys = { "Writing application", "Title" };
         for (String lKey : possibleKeys) {
-            if (!(lCameraModel = getMovieMetadata(f, lKey)).isEmpty()) {
+            if (null != (lCameraModel = getMediaMetadataValue(f, lKey))) {
                 break;
             }
         }
-
-        // Internal conversion of frequent formats
-        if ("CanonMVI06".equals(lCameraModel)) {
-            lCameraModel = "canon_ixus70";
-        }
-
+        // Internal conversion of frequent known formats
+        lCameraModel = getKnownCameraModel(lCameraModel);
         // Get User confirmation
         if (!movieCameraModel.equals(lCameraModel)) {    // Compare the current Camera Model with the previous file's (default is @@No Camera Model@@)
-            movieCameraModel = lCameraModel;             // If it is different, ask the user which will be the "User" Camera Model
-            int lConfirmResponse;
-            do {
-                movieCameraModelUser = JOptionPane.showInputDialog("Camera Model for file " + f.getName() + " (and similar):", lCameraModel).trim().toLowerCase().replaceAll("[^\\w]", "_");
-                // Confirm
-                lConfirmResponse = JOptionPane.showConfirmDialog(null, "Camera Model information for file " + f.getName() +
-                        " and similar will be \n\t\t\"" + movieCameraModelUser + "\"\nConfirm?", "Input Confirmation", JOptionPane.YES_NO_CANCEL_OPTION);
-                if (JOptionPane.CANCEL_OPTION == lConfirmResponse) {
-                    JOptionPane.showMessageDialog(null, "Conversion Cancelled.", "Media Classifier", JOptionPane.INFORMATION_MESSAGE);
-                    System.exit(0);
-                }
-            } while (JOptionPane.YES_OPTION != lConfirmResponse);
+            movieCameraModel = lCameraModel;             // If it is different, ask the user which will be the name the user wants to give to the new Camera Model
+            movieCameraModelUser = getUserConfirmationCameraModel(f.getName(), lCameraModel);
         }
         return movieCameraModelUser;
-
     }
 
     /**
@@ -286,18 +324,19 @@ public class MediaConverter {
     /**
      * Populates the exifMetadata property with data for the EXIF analysis.
      * @param f the file that is being analysed
-     * @return success
+     * @return success. if True, then exifMetadata is populated
      */
-    private boolean readExifMetadata(File f) {
-        if (exifMetadata != null) return true;
-        try {
-            exifMetadata = ImageMetadataReader.readMetadata(f);
-        } catch (ImageProcessingException e) {
-            e.printStackTrace();
-            return false;
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
+    private boolean getExifMetadataValue(File f) {
+        if (null == exifMetadata) {
+            try {
+                exifMetadata = ImageMetadataReader.readMetadata(f);
+            } catch (ImageProcessingException e) {
+                e.printStackTrace();
+                return false;
+            } catch (IOException e) {
+                e.printStackTrace();
+                return false;
+            }
         }
         return true;
     }
@@ -308,7 +347,7 @@ public class MediaConverter {
      * @return the proposed file timestamp or null in case of error
      */
     private Date getExifTimestamp(File f) {
-        if (!readExifMetadata(f)) return null;      // In case of any EXIF error, return null
+        if (!getExifMetadataValue(f)) return null;      // In case of any EXIF error, return null
 
         // Get Filestamp from EXIF
         ExifSubIFDDirectory directory = exifMetadata.getDirectory(ExifSubIFDDirectory.class);
@@ -326,9 +365,9 @@ public class MediaConverter {
      * @return the file camera model name
      */
     private String getExifCameraModel(File f) {
-        if (!readExifMetadata(f)) return "";      // In case of any EXIF error, return ""
+        if (!getExifMetadataValue(f)) return "";      // In case of any EXIF error, return ""
 
-        // Get Camera MOdel from EXIF
+        // Get Camera Model from EXIF
         ExifIFD0Directory directory = exifMetadata.getDirectory(ExifIFD0Directory.class);
         String lCameraModel;
         try {
@@ -337,28 +376,12 @@ public class MediaConverter {
             e.printStackTrace();
             return "";      // In case of any EXIF error, return ""
         }
-
-        // Internal conversion of frequent formats
-        if ("Canon DIGITAL IXUS 70".equals(lCameraModel)) {
-            lCameraModel = "canon_ixus70_101";
-        } else if ("NIKON CORPORATION NIKON D3200".equals(lCameraModel)) {
-            lCameraModel = "nikon_d3200_100";
-        }
-
+        // Internal conversion of frequent known formats
+        lCameraModel = getKnownCameraModel(lCameraModel);
         // Get User confirmation
         if (!exifCameraModel.equals(lCameraModel)) {    // Compare the current Camera Model with the previous file's (default is @@No Camera Model@@)
-            exifCameraModel = lCameraModel;             // If it is different, ask the user which will be the "User" Camera Model
-            int lConfirmResponse;
-            do {
-                exifCameraModelUser = JOptionPane.showInputDialog("Camera Model for file " + f.getName() + " (and similar):", lCameraModel).trim().toLowerCase().replaceAll("[^\\w]", "_");
-                // Confirm
-                lConfirmResponse = JOptionPane.showConfirmDialog(null, "Camera Model information for file " + f.getName() +
-                        " and similar will be \n\t\t\"" + exifCameraModelUser + "\"\nConfirm?", "Input Confirmation", JOptionPane.YES_NO_CANCEL_OPTION);
-                if (JOptionPane.CANCEL_OPTION == lConfirmResponse) {
-                    JOptionPane.showMessageDialog(null, "Conversion Cancelled.", "Media Classifier", JOptionPane.INFORMATION_MESSAGE);
-                    System.exit(0);
-                }
-            } while (JOptionPane.YES_OPTION != lConfirmResponse);
+            exifCameraModel = lCameraModel;             // If it is different, ask the user which will be the name the user wants to give to the new Camera Model
+            exifCameraModelUser = getUserConfirmationCameraModel(f.getName(), lCameraModel);
         }
         return exifCameraModelUser;
     }
@@ -380,7 +403,7 @@ public class MediaConverter {
     private String getFileTimestamp(File f) {
         Date lTimeStamp;
         String lFileExtension = getFileExtension(f);
-        lTimeStamp = ArrayUtils.contains(fPhotoExtensions, lFileExtension) ? getExifTimestamp(f) : getMovieTimeStamp(f);
+        lTimeStamp = ArrayUtils.contains(fPhotoExtensions, lFileExtension) ? getExifTimestamp(f) : getMediaTimeStamp(f);
         if (null == lTimeStamp) {
             // Get Filestamp from File Last Modified
             lTimeStamp = new Date(f.lastModified());
@@ -398,7 +421,7 @@ public class MediaConverter {
      * @return the camera model name
      */
     private String getFileCameraModel(File f) {
-        return ArrayUtils.contains(fPhotoExtensions, getFileExtension(f)) ? getExifCameraModel(f) : getMovieCameraModel(f);
+        return ArrayUtils.contains(fPhotoExtensions, getFileExtension(f)) ? getExifCameraModel(f) : getMediaCameraModel(f);
     }
 
     /**
