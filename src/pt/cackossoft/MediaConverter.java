@@ -197,7 +197,7 @@ public class MediaConverter {
      * @return Value for the passed key, if any. Otherwise, null
      */
     private String getMediaMetadataValue(File f, String aKey) {
-        if (null == mediaMetadata) {
+/*        if (null == mediaMetadata) {
             // Invoke external program "mediainfo"
             ProcessBuilder pb = new ProcessBuilder("mediainfo", "-f", f.getAbsolutePath());
             Process p = null;
@@ -241,7 +241,8 @@ public class MediaConverter {
                break;
             }
         } while (lStrKeyValue != null);
-        return null == lStrKeyValue ? null : lStrKeyValue.split(": ")[1].trim();
+        return null == lStrKeyValue ? null : lStrKeyValue.split(": ")[1].trim(); */
+        return "";
     }
 
     /**
