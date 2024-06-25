@@ -12,6 +12,8 @@ import java.io.*;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Scanner;
+import java.text.Normalizer;
 
 /**
  * Created by cecoutinho on 23-07-2014.
@@ -23,19 +25,23 @@ public class MediaConverter {
                                          , "Rename: Remove Regex & Add prefix Timestamp + Camera Model"
                                          , "Rename: Replace Regex by User fixed text"
                                          , "Rename: Update File Time adding minutes"
-                                         , "Wiko/Samsung Galaxy S2/S3/Tab/Ace" };
+                                         , "Wiko/Samsung Galaxy S2/S3/Tab/Ace"
+                                         , "Standard Rename bulk files" };
 
     private final String[] fMovieExtensions = { ".avi", ".mpg", ".mov", ".3gp" };
     private final String[] fPhotoExtensions = { ".jpg", ".png", ".gif" };
     private Metadata exifMetadata;          // Exif Metadata for the current photo (must be cleared every time the photo changes).
     private String exifCameraModel;         // Original Camera model name for photos (must be reset every time a new folder is selected).
     private String exifCameraModelUser;     // User-defined Camera model name for photos
-    private BufferedReader mediaMetadata;         // Media Metadata for the current file (must be cleared every time the file changes).
+    private BufferedReader mediaMetadata;   // Media Metadata for the current file (must be cleared every time the file changes).
     private String movieCameraModel;        // Original Camera model name for movies (must be reset every time a new folder is selected).
     private String movieCameraModelUser;    // User-defined Camera model name for movies
     private String replaceRegex;            // Regex to be replaced by new text or by Timestamp_CameraModel
     private String replacementUserText;     // New text to replace the Regex for
     private int minutesToBeAdded;           // Number of minutes to add the file timestamp
+    private String bulkReplacementFilename; // Filename for bulk replacement
+    private String bulkReplacementPrefix;   // Prefix for bulk replacement filenames
+
     private final String[] fKnownCameraModelIDs = { "Canon Canon DIGITAL IXUS 70", "CanonMVI06", "NIKON CORPORATION NIKON D3200", "WIKO                            HIGHWAY                        " };
     private final String[] fKnownCameraModelNames = { "canon_ixus70_101", "canon_ixus70_101", "nikon_d3200_100", "wiko_highway" };
 
@@ -75,6 +81,7 @@ public class MediaConverter {
             case 3: return getNewFilePath_ReplaceRegexByUserText(f);
             case 4: return getNewFilePath_UpdatePrefixTimeAddMinutes(f);
             case 5: return getNewFilePath_samsung(f);
+            case 6: return getNewFilePath_bulkrename(f);
         }
         return "";
     }
@@ -140,12 +147,27 @@ public class MediaConverter {
                 minutesToBeAdded = Integer.parseInt(lMinutesToBeAdded);
             }
 
+            // Get the number of minutes to add, if option was selected
+            bulkReplacementFilename = null;
+            if (fConverters[6].equals(lConverter)) {
+                bulkReplacementFilename = getFilePath("");
+                if (null == bulkReplacementFilename) {
+                    continue;
+                }
+                bulkReplacementPrefix = JOptionPane.showInputDialog(null, "Specify the prefix of the filenames:", "Media Converter", JOptionPane.QUESTION_MESSAGE);
+                if (null == bulkReplacementPrefix) {
+                    continue;
+                }
+            }
+
             // Confirm Actions
             if (JOptionPane.OK_OPTION != JOptionPane.showConfirmDialog(null, "Please Confirm the parameters:\n\nSelected folder: " + lSrcFolderPath
-                    + "\nSelected Action: " + lConverter + (null == replaceRegex ? "" : "\nRegex Text to be replaced: \"" + replaceRegex + "\"")
-                    + (null == replacementUserText ? "" : "\nText to replace the above regex: \"" + replacementUserText + "\"")
-                    + (null == lMinutesToBeAdded ? "" : "\nMinutes to be added to each timestamp: " + minutesToBeAdded),
-                    "Input Confirmation", JOptionPane.OK_CANCEL_OPTION)) {
+                            + "\nSelected Action: " + lConverter + (null == replaceRegex ? "" : "\nRegex Text to be replaced: \"" + replaceRegex + "\"")
+                            + (null == replacementUserText ? "" : "\nText to replace the above regex: \"" + replacementUserText + "\"")
+                            + (null == lMinutesToBeAdded ? "" : "\nMinutes to be added to each timestamp: " + minutesToBeAdded)
+                            + (null == bulkReplacementFilename ? "" : "\nFile for doing renaming: " + bulkReplacementFilename)
+                            + (null == bulkReplacementPrefix ? "" : "\nPrefix of bulk renaming filenames: " + bulkReplacementPrefix),
+                         "Input Confirmation", JOptionPane.OK_CANCEL_OPTION)) {
                 JOptionPane.showMessageDialog(null, "Conversion Cancelled.", "Media Classifier", JOptionPane.INFORMATION_MESSAGE);
                 continue;
             }
@@ -182,6 +204,19 @@ public class MediaConverter {
         JFileChooser lFileDialog = new JFileChooser(aDefaultFolder);
         lFileDialog.setDialogTitle("Select folder to be converted");
         lFileDialog.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        lFileDialog.setAcceptAllFileFilterUsed(false);
+        return lFileDialog.showOpenDialog(null) == JFileChooser.APPROVE_OPTION ? lFileDialog.getSelectedFile().getAbsolutePath() : "";
+    }
+
+    /**
+     * Opens a file selection dialog and returns the selected path.
+     * @param aDefaultFolder the default folder for the media
+     * @return "" if the user did not select any file (Cancelled), or the file path otherwise.
+     */
+    private String getFilePath(String aDefaultFolder) {
+        JFileChooser lFileDialog = new JFileChooser(aDefaultFolder);
+        lFileDialog.setDialogTitle("Select file to be used");
+        lFileDialog.setFileSelectionMode(JFileChooser.FILES_ONLY);
         lFileDialog.setAcceptAllFileFilterUsed(false);
         return lFileDialog.showOpenDialog(null) == JFileChooser.APPROVE_OPTION ? lFileDialog.getSelectedFile().getAbsolutePath() : "";
     }
@@ -470,6 +505,39 @@ public class MediaConverter {
         // Add folder (in this case it is the same)
         lNewFilePath = f.getParent() + File.separator + lNewFilePath;
         return lNewFilePath;
+    }
+
+    /**
+     * Gets the new Filename path for media taken on: All Samsung Phones except Ace (change the lStaticInfo)
+     * @param f the file that is being analysed
+     * @return "" if the file does not need renaming; the new name otherwise.
+     */
+    private String getNewFilePath_bulkrename(File f) {
+        if (f.getName().startsWith(bulkReplacementPrefix)) {
+            String lNameWithoutPrefix = f.getName();
+            lNameWithoutPrefix = lNameWithoutPrefix.substring(bulkReplacementPrefix.length());
+            try {
+                File fRename = new File(bulkReplacementFilename);
+                Scanner myReader = new Scanner(fRename);
+                while (myReader.hasNextLine()) {
+                    String[] data = myReader.nextLine().split("\t");
+                    String oldName = data[0] + ".pdf";
+                    if (oldName.equals(lNameWithoutPrefix)) {
+                        String[] studentNames = data[2].split(" ");
+                        String unaccentedName = studentNames[0] + studentNames[studentNames.length-1];
+                        unaccentedName = Normalizer.normalize(unaccentedName, Normalizer.Form.NFD);
+                        unaccentedName = unaccentedName.replaceAll("[\\p{InCombiningDiacriticalMarks}]", "");
+                        String newName = data[1] + "-" + unaccentedName + "-so-2023-teste-epoca-2.pdf";
+                        return f.getParent() + File.separator + newName;
+                    }
+                }
+                myReader.close();
+            } catch (FileNotFoundException e) {
+                System.out.println("An error occurred.");
+                e.printStackTrace();
+            }
+        }
+        return "";
     }
 
     /**
